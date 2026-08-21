@@ -1,0 +1,18 @@
+services:   #Docker Compose automatically creates an isolated virtual network for your services.
+  nginx: #Inside this private Docker network, every container gets its own unique IP address and hostname.
+    image: nginx:alpine
+    ports:
+      - "8080:80"
+      - "8443:443" #  HTTPS/SSL
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z
+      - ./nginx-certs:/etc/nginx/certs:ro,z  #  SSL certs
+    depends_on:
+      - app
+
+  app:
+    build: .
+    environment:
+      - APP_NAME=App
+
+ 

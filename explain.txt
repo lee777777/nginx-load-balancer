@@ -1,0 +1,89 @@
+
+┌────────────────────────────────────────────────────────┐
+               │                DOCKER PRIVATE NETWORK                  │
+               │                                                        │
+               │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  │
+               │  │    app1      │  │    app2      │  │    app3      │  │
+               │  │ 172.18.0.2   │  │ 172.18.0.3   │  │ 172.18.0.4   │  │
+               │  │ Port: 3000   │  │ Port: 3000   │  │ Port: 3000   │  │
+               │  └──────▲───────┘  └──────▲───────┘  └──────▲───────┘  │
+               │         │                 │                 │          │
+               │         └─────────┬───────┴─────────────────┘          │
+               │                   │                                    │
+               │           ┌───────┴──────┐                             │
+               │           │    nginx     │                             │
+               │           │ 172.18.0.5   │                             │
+               └───────────┴───────▲──────┴─────────────────────────────┘
+                                   │
+                           Host Port 8080 / 80
+                                   │
+                           [ User Browser ]
+
+In Docker, containers act like separate virtual computers connected to a private router (the Docker bridge network)
+Because each app container has its own IP address:
+
+    app1 listens on 172.18.0.2:3000
+
+    app2 listens on 172.18.0.3:3000
+
+    app3 listens on 172.18.0.4:3000
+
+There is no port conflict because they are running on completely different internal IP addresses!
+How NGINX Resolves Them:
+Inside the Docker network, Docker runs a built-in DNS service. NGINX uses the service names (app1, app2, app3) as domain names.When NGINX executes:Nginxupstream nodejs_cluster {
+    server app1:3000;
+    server app2:3000;
+    server app3:3000;
+}
+Docker's DNS automatically translates:app1:3000 $\rightarrow$ 172.18.0.2:3000app2:3000 $\rightarrow$ 172.18.0.3:3000app3:3000 $\rightarrow$ 172.18.0.4:3000
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+summery:
+1- Port Mapping: Your browser hits localhost:8080, which Docker bridges into the NGINX container's port 80.
+
+2- The "Router" (Reverse Proxy): NGINX catches that request and acts as a traffic controller, deciding which backend server should handle it.
+
+3- IPs and DNS: Every container gets its own private IP address on the virtual network. Docker's built-in DNS translates the service names (app1, app2, app3) into those IP addresses automatically so NGINX can find them.
+
+4- Load Balancing: NGINX uses specific methods (by default, Round-Robin: 1, 2, 3, 1, 2, 3) to distribute traffic efficiently across the network.
+
+5- App Containers: The backend containers hold your Node.js runtime, your server.js code, and all application data. NGINX just holds the routing rules.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Part 1: How all apps can run on Port 3000?
+
+Think of a container as a tiny virtual computer with its own completely independent operating system and network interface.
+
+Because app1, app2, and app3 are separate "computers":
+
+    app1 opens port 3000 on its own local interface (172.18.0.2:3000).
+
+    app2 opens port 3000 on its own local interface (172.18.0.3:3000).
+
+    app3 opens port 3000 on its own local interface (172.18.0.4:3000).
+
+Port 3000 is simply the port exposed internally inside each container's OS boundary. There is no conflict because they exist on entirely different IP addresses on Docker's private network.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Part 2: How Docker creates "Virtual Computers" (Containers)?
+Unlike Virtual Machines (VMs) like VirtualBox or VMware—which emulate real hardware, BIOS, and full OS kernels—Docker does not emulate hardware.
+Instead, Docker uses low-level features built directly into the Linux Kernel (which Bazzite runs on) to partition the operating system into isolated sandboxes:
+1. Namespaces (Isolation):
+Namespaces hide process trees and system resources from each other:
+-PID Namespace: Each container thinks it is the only OS running, where its main process (node server.js) is Process #1 (PID 1).
+-NET Namespace: Gives each container its own private network stack, loopback device, routing table, and virtual ethernet adapter (eth0).
+-Mount Namespace: Gives each container its own isolated filesystem isolated from your host system.
+
+2. Control Groups (cgroups - Resource Constraints):
+cgroups limit how much memory, CPU, and disk I/O each container can consume so one app doesn't crash the host machine.
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Part 3: How Docker builds the Internal Virtual Network?
+When you run docker compose up, Docker automatically sets up software networking components inside the Linux kernel:
+1. Virtual Bridge (docker0 or compose network):
+ Docker creates a virtual network switch (like a software router inside Linux) with its own IP subnet (e.g., 172.18.0.0/16).
+2. Virtual Ethernet Pairs (veth pairs):
+ Think of a virtual ethernet cable. Docker plugs one end into the container's private NET namespace (eth0)
+  and plugs the other end into the Docker virtual switch on your host.
+3. Embedded DNS Server:
+ Docker runs a tiny DNS service at 127.0.0.11 inside the network. 
+ When NGINX looks for app1, the Docker DNS interceptor resolves app1 $\rightarrow$ 172.18.0.2.
+4. iptables / NAT Rules: 
+ Docker uses Linux iptables to create firewall and network address translation (NAT) rules. 
+ When your host receives traffic on localhost:8080, Linux forwards those TCP packets directly into NGINX's internal container IP (172.18.0.5:80).

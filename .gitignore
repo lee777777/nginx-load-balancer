@@ -1,0 +1,5 @@
+*.key
+*.crt
+inginx-certs/
+nginx-certs/
+certs/
