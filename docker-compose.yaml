@@ -1,18 +1,20 @@
-services:   #Docker Compose automatically creates an isolated virtual network for your services.
-  nginx: #Inside this private Docker network, every container gets its own unique IP address and hostname.
+#this is the blueprint for this application, Docker Compose automatically creates an isolated virtual network for the services with "docker compose up".
+# Inside this private Docker network, every container gets its own unique IP address and hostname.
+services:   #Services are the individual containers that make up my application stack.
+  nginx: #nginx service: Spins up the NGINX web server container. It acts as the single entry point (reverse proxy, ssl and load balancer) for all outside traffic.
     image: nginx:alpine
-    ports:
-      - "8080:80"
-      - "8443:443" #  HTTPS/SSL
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z
-      - ./nginx-certs:/etc/nginx/certs:ro,z  #  SSL certs
+    ports: #Bridges network traffic between the host machine (my computer) and the isolated container network
+      - "8080:80" #for HTTP traffic, maps port 8080 on my host to port 80 inside the NGINX container.
+      - "8443:443" #  HTTPS/SSL traffic, maps port 8443 on the host to port 443 inside the NGINX container.
+    volumes: #Docker volume mounts map files or directories from the host machine into the container.
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro,z # (HOST_PATH : CONTAINER_PATH : FLAGS), ro is Read-Only, it prevents the NGINX container from modifying or deleting the file on the computer.
+      - ./nginx-certs:/etc/nginx/certs:ro,z  #  SSL certs,  z is Shared SELinux Label and it configures SELinux security context flags so the container process has permission to read host files.
     depends_on:
-      - app
+      - app #Tells Docker Compose that app backend containers should start running before NGINX tries to initialize.
 
-  app:
+  app:  #app service: Spins up the Node.js application (server.js) container that handles backend logic and requests.
     build: .
     environment:
       - APP_NAME=App
 
- 
+#`docker compose up -d --scale app=5` or `docker compose up -d --build --scale app=5` for first time
